@@ -19,6 +19,7 @@ package org.jetbrains.kotlin.cli.bc
 import org.jetbrains.kotlin.cli.common.arguments.CommonCompilerArguments
 import org.jetbrains.kotlin.cli.common.arguments.Argument
 import org.jetbrains.kotlin.cli.common.messages.MessageCollector
+import org.jetbrains.kotlin.config.AnalysisFlag
 import org.jetbrains.kotlin.config.LanguageFeature
 
 class K2NativeCompilerArguments : CommonCompilerArguments() {
@@ -154,5 +155,11 @@ class K2NativeCompilerArguments : CommonCompilerArguments() {
         it[LanguageFeature.InlineClasses] = LanguageFeature.State.ENABLED // TODO: remove after updating to 1.3.
         it[LanguageFeature.ReleaseCoroutines] = LanguageFeature.State.DISABLED
     }
+
+    override fun configureAnalysisFlags(collector: MessageCollector): MutableMap<AnalysisFlag<*>, Any> =
+            super.configureAnalysisFlags(collector).also {
+                val useExperimental = it[AnalysisFlag.useExperimental] as List<*>
+                it[AnalysisFlag.useExperimental] = useExperimental + listOf("kotlin.ExperimentalUnsignedTypes")
+            }
 }
 
