@@ -784,6 +784,24 @@ internal class DeepCopyIrTreeWithDescriptors(val targetDescriptor: FunctionDescr
 
 class SubstitutedDescriptor(val inlinedFunction: FunctionDescriptor, val descriptor: DeclarationDescriptor)
 
+/**
+ * Searches recursively for value that is corresponds to [key],
+ * then to typeMapper(this[key]) and so on until typeMapper or Map.get returns null.
+ * Returns null if there is no corresponding value for given [key] inside the map
+ */
+private fun <K, V> Map<K, V>.deepSearch(key:K?, typeMapper: (V) -> K?): V? {
+    var result: V? = null
+    var newKey = key
+    do {
+        val value = this[newKey]
+        if (value != null) {
+            result = value
+            newKey = typeMapper(value) ?: return result
+        }
+    } while (value != null)
+    return result
+}
+
 internal class DescriptorSubstitutorForExternalScope(
         val globalSubstituteMap: MutableMap<DeclarationDescriptor, SubstitutedDescriptor>,
         val context: Context
@@ -808,7 +826,27 @@ internal class DescriptorSubstitutorForExternalScope(
 
                 val oldDescriptor = declaration.descriptor
                 val oldClassDescriptor = oldDescriptor.type.constructor.declarationDescriptor as? ClassDescriptor
-                val substitutedDescriptor = oldClassDescriptor?.let { globalSubstituteMap[it] }
+
+                // This recursive search inside the map requires some explanation.
+                // Take a look a the following code:
+                //
+                // inline fun exec(f: () -> Unit) = f()
+                //
+                // inline fun test2() {
+                //     val sr = object {} // <- problematic place
+                // }
+                //
+                // fun box() {
+                //     exec {
+                //         test2()
+                //     }
+                // }
+                //
+                // Here test2 will be inlined twice, so descriptor of the object will be changed twice (ex. from A to B and from B to C).
+                // If we use ordinary access to the map (globalSubstituteMap[A]) then we get wrong descriptor (B).
+                // So we have to search recursively inside the map to find correct descriptor.
+                val substitutedDescriptor = globalSubstituteMap.deepSearch(oldClassDescriptor) { it.descriptor as? ClassDescriptor }
+
                 if (substitutedDescriptor == null || allScopes.any { it.scope.scopeOwner == substitutedDescriptor.inlinedFunction })
                     return
                 val newDescriptor = IrTemporaryVariableDescriptorImpl(
