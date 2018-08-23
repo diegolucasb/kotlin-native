@@ -20,6 +20,7 @@ import kotlin.native.worker.*
 import platform.posix.memcpy
 
 // This global variable only set to != null value in the decoding worker.
+@ThreadLocal
 private var decoder: Decoder? = null
 
 data class VideoInfo(val size: Dimensions, val fps: Double)
