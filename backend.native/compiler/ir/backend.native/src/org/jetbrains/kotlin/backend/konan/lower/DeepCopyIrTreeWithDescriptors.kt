@@ -788,15 +788,25 @@ class SubstitutedDescriptor(val inlinedFunction: FunctionDescriptor, val descrip
  * Searches recursively for value that is corresponds to [key],
  * then to typeMapper(this[key]) and so on until typeMapper or Map.get returns null.
  * Returns null if there is no corresponding value for given [key] inside the map
+ * Gives control and latest value to [cycleHandler] if recursion led to cycle.
  */
-private fun <K, V> Map<K, V>.deepSearch(key:K?, typeMapper: (V) -> K?): V? {
+private fun <K, V> Map<K, V>.deepSearch(key:K?, typeMapper: (V) -> K?,
+                                        cycleHandler: (V?) -> V? = { throw IllegalStateException("Detected cycle inside $this") }): V? {
     var result: V? = null
-    var newKey = key
+    // prevent cycles by remembering visited keys.
+    val visitedKeys = mutableSetOf<K?>()
+    var keyToVisit = key
     do {
-        val value = this[newKey]
+        if (keyToVisit in visitedKeys) {
+            // Cycle detected
+            return cycleHandler(result)
+        } else {
+            visitedKeys += keyToVisit
+        }
+        val value = this[keyToVisit]
         if (value != null) {
             result = value
-            newKey = typeMapper(value) ?: return result
+            keyToVisit = typeMapper(value) ?: return result
         }
     } while (value != null)
     return result
@@ -845,7 +855,8 @@ internal class DescriptorSubstitutorForExternalScope(
                 // Here test2 will be inlined twice, so descriptor of the object will be changed twice (ex. from A to B and from B to C).
                 // If we use ordinary access to the map (globalSubstituteMap[A]) then we get wrong descriptor (B).
                 // So we have to search recursively inside the map to find correct descriptor.
-                val substitutedDescriptor = globalSubstituteMap.deepSearch(oldClassDescriptor) { it.descriptor as? ClassDescriptor }
+                val typeMapper: (SubstitutedDescriptor) -> ClassDescriptor? = { it.descriptor as? ClassDescriptor }
+                val substitutedDescriptor = globalSubstituteMap.deepSearch(oldClassDescriptor, typeMapper)
 
                 if (substitutedDescriptor == null || allScopes.any { it.scope.scopeOwner == substitutedDescriptor.inlinedFunction })
                     return
